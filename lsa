@@ -1,0 +1,114 @@
+#!/usr/bin/env variant
+
+parameters:
+  - name: cachedir
+    type: string
+    default: "~/.cache"
+
+tasks:
+  ec2:
+    mixins:
+      build_filter: &build_filter |
+        project={{ get "project" }}
+        role={{ get "role" }}
+        stage={{ get "stage" }}
+
+        filters=""
+        if [ "$project" != "" ]; then
+          filters="$filters Name=tag:Project,Values=$project"
+        fi
+        if [ "$role" != "" ]; then
+          filters="$filters Name=tag:Role,Values=$role"
+        fi
+        if [ "$stage" != "" ]; then
+          filters="$filters Name=tag:Stage,Values=$stage"
+        fi
+    parameters:
+      - name: project
+        type: string
+        default: ""
+      - name: role
+        type: string
+        default: ""
+      - name: stage
+        type: string
+        default: ""
+    script:
+      - *build_filter
+      - |
+        aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Name")).Value, .NetworkInterfaces[0].PrivateIpAddress] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
+
+tasks:
+  asg:
+    mixins:
+      get_cache_path: &get_cache_path |
+        cachedir={{ get "cachedir" }}
+        hash=$(aws configure list | md5 | head -c8)
+        cachepath=$cachedir/lsaws_asg_$hash
+    tasks:
+      fetch:
+        script:
+          - *get_cache_path
+          - |
+            aws autoscaling describe-auto-scaling-groups > $cachepath
+      list:
+        script:
+          - *get_cache_path
+          - |
+            cat $cachepath | jq -r '.AutoScalingGroups[] | [.AutoScalingGroupName] |@csv' | sed 's/\"//g'
+      describe:
+        parameters:
+          - name: detail
+            type: boolean
+            default: false
+        script:
+          - *get_cache_path
+          - |
+            detail={{ get "detail" }}
+            asgs=$(cat $cachepath | jq -r '.AutoScalingGroups[] | [.AutoScalingGroupName, (.Tags[]? | select(.Key == "Name")).Value, (.Tags[]? | select(.Key == "Project")).Value, (.Tags[]? | select(.Key == "Role")).Value, (.Tags[]? | select(.Key == "Stage")).Value] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | peco | cut -d, -f1)
+
+            for asg in `echo $asgs`; do
+              if [ $? == 0 -a "$asg" != "" ]; then
+                output=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $asg)
+
+                if [ $detail == "true" ]; then
+                  echo $output | jq .
+                else
+                  echo "no"
+                fi
+              fi
+            done
+tasks:
+  r53:
+    parameters:
+      - name: zone
+        type: string
+    mixins:
+      get_cache_path: &get_cache_path |
+        cachedir={{ get "cachedir" }}
+        cachepath=$cachedir/lsaws_r53_{{ get "zone" }}
+    tasks:
+      fetch:
+        script:
+          - *get_cache_path
+          - |
+            aws route53 list-resource-record-sets --hosted-zone-id {{ get "zone" }} > $cachepath
+      list:
+        script:
+          - *get_cache_path
+          - |
+            cat $cachepath | jq -r '.ResourceRecordSets[] | select(.Type == "A" or .Type == "CNAME") | [.Name, .Type, .AliasTarget.DNSName, (.ResourceRecords[]? ).Value ] | @csv' | sed -e "s/\"//g" -e "s/,/, /g"
+      describe:
+        parameters:
+          - name: detail
+            type: boolean
+            default: false
+        script:
+          - *get_cache_path
+          - |
+            cat $cachepath | jq -r '.ResourceRecordSets[] | select(.Type == "A" or .Type == "CNAME") | [.Name, .Type, .AliasTarget.DNSName, (.ResourceRecords[]? ).Value ] | @csv' | sed -e "s/\"//g" -e "s/,/, /g"
+
+tasks:
+  zsh-completion:
+    script:
+      - echo "hoge"
