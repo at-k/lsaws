@@ -8,35 +8,50 @@ parameters:
 tasks:
   ec2:
     mixins:
-      build_filter: &build_filter |
-        project={{ get "project" }}
-        role={{ get "role" }}
-        stage={{ get "stage" }}
+      get_cache_path: &get_cache_path |
+        cachedir={{ get "cachedir" }}
+        hash=$(aws configure list | md5 | head -c8)
+        cachepath=$cachedir/lsaws_ec2_tag_$hash
+    tasks:
+      fetch:
+        script:
+          - *get_cache_path
+          - |
+            aws ec2 describe-instances > "$cachepath"_inst
+            cat "$cachepath"_inst | jq -r '.Reservations[].Instances[] | [(.Tags[]? | select(.Key == "Project")).Value // "none"] |@csv' | sort | uniq > "$cachepath"_p
+            cat "$cachepath"_inst | jq -r '.Reservations[].Instances[] | [(.Tags[]? | select(.Key == "Role")).Value // "none"] | @csv' | sort | uniq > "$cachepath"_r
+            cat "$cachepath"_inst | jq -r '.Reservations[].Instances[] | [(.Tags[]? | select(.Key == "Stage")).Value // "none" ] |@csv' | sort | uniq > "$cachepath"_s
+      list:
+        mixins:
+          build_filter: &build_filter |
+            project={{ get "project" }}
+            role={{ get "role" }}
+            stage={{ get "stage" }}
 
-        filters=""
-        if [ "$project" != "" ]; then
-          filters="$filters Name=tag:Project,Values=$project"
-        fi
-        if [ "$role" != "" ]; then
-          filters="$filters Name=tag:Role,Values=$role"
-        fi
-        if [ "$stage" != "" ]; then
-          filters="$filters Name=tag:Stage,Values=$stage"
-        fi
-    parameters:
-      - name: project
-        type: string
-        default: ""
-      - name: role
-        type: string
-        default: ""
-      - name: stage
-        type: string
-        default: ""
-    script:
-      - *build_filter
-      - |
-        aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Name")).Value, .NetworkInterfaces[0].PrivateIpAddress] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
+            filters=""
+            if [ "$project" != "" ]; then
+              filters="$filters Name=tag:Project,Values=$project"
+            fi
+            if [ "$role" != "" ]; then
+              filters="$filters Name=tag:Role,Values=$role"
+            fi
+            if [ "$stage" != "" ]; then
+              filters="$filters Name=tag:Stage,Values=$stage"
+            fi
+        parameters:
+          - name: project
+            type: string
+            default: ""
+          - name: role
+            type: string
+            default: ""
+          - name: stage
+            type: string
+            default: ""
+        script:
+          - *build_filter
+          - |
+            aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Name")).Value // "n/a", .NetworkInterfaces[0].PrivateIpAddress] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
 
 tasks:
   asg:
