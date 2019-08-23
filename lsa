@@ -51,7 +51,7 @@ tasks:
         script:
           - *build_filter
           - |
-            aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Name")).Value // "n/a", .NetworkInterfaces[0].PrivateIpAddress] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
+            aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.NetworkInterfaces[0].PrivateIpAddress, .InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Project")).Value // "n/a",(.Tags[]? | select(.Key == "Role")).Value // "n/a", (.Tags[]? | select(.Key == "Stage")).Value // "n/a" ] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
 
 tasks:
   asg:
@@ -70,7 +70,7 @@ tasks:
         script:
           - *get_cache_path
           - |
-            cat $cachepath | jq -r '.AutoScalingGroups[] | [.AutoScalingGroupName] |@csv' | sed 's/\"//g'
+            cat $cachepath | jq -r '.AutoScalingGroups[] |  [.AutoScalingGroupName, (.Tags[]? | select(.Key == "Name")).Value, (.Tags[]? | select(.Key == "Project")).Value, (.Tags[]? | select(.Key == "Role")).Value, (.Tags[]? | select(.Key == "Stage")).Value] |@csv' | sed 's/\"//g'
       describe:
         parameters:
           - name: detail
@@ -89,7 +89,7 @@ tasks:
                 if [ $detail == "true" ]; then
                   echo $output | jq .
                 else
-                  echo "no"
+                  echo $output | jq '.AutoScalingGroups[]|{AutoScalingGroupName: .AutoScalingGroupName, MinSize: .MinSize, MaxSize: .MaxSize, DesiredCapacity: .DesiredCapacity}'
                 fi
               fi
             done

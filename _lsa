@@ -41,7 +41,7 @@ function _lsa_ec2_list {
 
 function _lsa_asg {
     _arguments -C \
-        "1: :(fetch list)" \
+        "1: :(fetch list describe)" \
         "*::arg:->args"
 }
 
