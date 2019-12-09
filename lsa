@@ -27,6 +27,7 @@ tasks:
             project={{ get "project" }}
             role={{ get "role" }}
             stage={{ get "stage" }}
+            asgName={{ get "asgName" }}
 
             filters=""
             if [ "$project" != "" ]; then
@@ -38,6 +39,9 @@ tasks:
             if [ "$stage" != "" ]; then
               filters="$filters Name=tag:Stage,Values=$stage"
             fi
+            if [ "$asgName" != "" ]; then
+              filters="$filters Name=tag:aws:autoscaling:groupName,Values=$asgName"
+            fi
         parameters:
           - name: project
             type: string
@@ -48,10 +52,14 @@ tasks:
           - name: stage
             type: string
             default: ""
+          - name: asgName
+            type: string
+            default: ""
+
         script:
           - *build_filter
           - |
-            aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.NetworkInterfaces[0].PrivateIpAddress, .InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Project")).Value // "n/a",(.Tags[]? | select(.Key == "Role")).Value // "n/a", (.Tags[]? | select(.Key == "Stage")).Value // "n/a" ] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
+            aws ec2 describe-instances --filters $filters | jq -r '.Reservations[].Instances[] | [.NetworkInterfaces[0].PrivateIpAddress, .InstanceId, .State.Name, .LaunchTime, (.Tags[]? | select(.Key == "Project")).Value // "n/a",(.Tags[]? | select(.Key == "Role")).Value // "n/a",(.Tags[]? | select(.Key == "Stage")).Value // "n/a",(.Tags[]? | select(.Key == "ResqueWorkers")).Value // "n/a",(.Tags[]? | select(.Key == "Option")).Value // "n/a" ,(.Tags[]? | select(.Key == "Substage")).Value // "n/a"] | @csv' | sed -e "s/\"//g" -e "s/,/, /g" | column -t
 
 tasks:
   asg:
